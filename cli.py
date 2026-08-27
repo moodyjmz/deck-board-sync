@@ -61,7 +61,7 @@ def cmd_create_card(args, client):
 
 def cmd_move_card(args, client):
     emit(client.move_card(
-        args.board_id, args.stack_id, args.card_id, args.target_stack_id, order=args.order, dry_run=args.dry_run,
+        args.board_id, args.target_stack_id, args.card_id, order=args.order, dry_run=args.dry_run,
     ))
 
 
@@ -112,7 +112,7 @@ def cmd_move_card_by_title(args, client):
               f"to stack {stack['id']} {stack['title']!r} (board {state['board']['id']})")
         return
 
-    emit(client.move_card(state["board"]["id"], card["stackId"], card["id"], stack["id"], order=args.order))
+    emit(client.move_card(state["board"]["id"], stack["id"], card["id"], order=args.order))
 
 
 def cmd_comment_by_title(args, client):
@@ -309,7 +309,6 @@ def build_parser():
 
     sp = sub.add_parser("move-card")
     sp.add_argument("board_id", type=int)
-    sp.add_argument("stack_id", type=int)
     sp.add_argument("card_id", type=int)
     sp.add_argument("target_stack_id", type=int)
     sp.add_argument("--order", type=int, default=999)

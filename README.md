@@ -62,6 +62,25 @@ Also worth knowing: cards that are archived don't show up in `list_cards`
 at all, so a title-based lookup can report "not found" for a card that
 genuinely exists.
 
+**A more serious one, found the same way:** `move_card`/`move-card`/
+`move-card-by-title` were silently broken from the day they were written
+until this was caught, because every prior check of them was `--dry-run`
+only. The `reorder` endpoint's URL is
+`PUT /boards/{boardId}/stacks/{stackId}/cards/{cardId}/reorder`, and the
+request body also takes a `stackId` (the destination). Those two `stackId`s
+are not the same thing to Deck's controller — the argument it actually
+binds comes from the URL's `{stackId}` route segment, and the route value
+wins over the body field of the same name. Passing the card's *current*
+stack in the URL (natural, since that's what identifies the card's
+location) and the *destination* in the body silently reorders the card
+within its current stack and never moves it — 200 OK, no error, a
+response payload that looks entirely plausible. **The URL's `{stackId}`
+must be the destination stack**, confirmed against Deck's own source
+(`CardService::reorder` in the `nextcloud/deck` repo), not just the docs.
+Moral: dry-run tells you the plan is sane, not that the plan works — a
+feature isn't verified until it's actually run for real, once, against a
+live board.
+
 ## Usage
 
 ```sh
@@ -71,7 +90,7 @@ python3 cli.py list-boards
 python3 cli.py create-board "Team Workload"
 python3 cli.py create-stack <board_id> "Now"
 python3 cli.py create-card <board_id> <stack_id> "Ship the thing" --description "..."
-python3 cli.py move-card <board_id> <stack_id> <card_id> <target_stack_id>
+python3 cli.py move-card <board_id> <card_id> <target_stack_id>
 python3 cli.py comment <card_id> "moved to done, PR merged"
 python3 cli.py create-label <board_id> "Urgent" FF0000
 python3 cli.py assign-label <board_id> <stack_id> <card_id> <label_id>
