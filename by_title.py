@@ -24,6 +24,13 @@ def find_stack(stacks, title):
     return matches[0] if matches else None
 
 
+def find_label(labels, title):
+    matches = [l for l in labels if l["title"] == title]
+    if len(matches) > 1:
+        raise ValueError(f"label titled {title!r} is ambiguous ({len(matches)} matches) -- rename one")
+    return matches[0] if matches else None
+
+
 def find_card(cards, title, from_stack=None):
     """cards must each carry a "stackTitle" key (attached by the caller when
     it flattens per-stack card lists) for from_stack filtering and ambiguity

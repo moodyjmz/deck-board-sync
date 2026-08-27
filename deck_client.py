@@ -78,6 +78,12 @@ class DeckClient:
     def list_boards(self):
         return self._request("GET", "/boards")
 
+    def get_board(self, board_id):
+        # list_boards() always returns an empty "labels" array regardless of
+        # what's actually on the board (confirmed against a live board that
+        # has default labels) -- fetch a single board when labels matter.
+        return self._request("GET", f"/boards/{board_id}")
+
     def list_stacks(self, board_id):
         return self._request("GET", f"/boards/{board_id}/stacks")
 
@@ -107,3 +113,14 @@ class DeckClient:
 
     def add_comment(self, card_id, message, dry_run=False):
         return self._request_ocs("POST", f"/cards/{card_id}/comments", {"message": message}, dry_run=dry_run)
+
+    def create_label(self, board_id, title, color, dry_run=False):
+        return self._request("POST", f"/boards/{board_id}/labels", {"title": title, "color": color}, dry_run=dry_run)
+
+    def assign_label(self, board_id, stack_id, card_id, label_id, dry_run=False):
+        path = f"/boards/{board_id}/stacks/{stack_id}/cards/{card_id}/assignLabel"
+        return self._request("PUT", path, {"labelId": label_id}, dry_run=dry_run)
+
+    def remove_label(self, board_id, stack_id, card_id, label_id, dry_run=False):
+        path = f"/boards/{board_id}/stacks/{stack_id}/cards/{card_id}/removeLabel"
+        return self._request("PUT", path, {"labelId": label_id}, dry_run=dry_run)
