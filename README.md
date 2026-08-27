@@ -32,6 +32,36 @@ credential locally; nothing else touches it.
 
 3. Requires Python 3 only — no `pip install`, no dependencies.
 
+## Known API quirks — don't trust label data without re-checking it
+
+Found live, not from the docs, across three separate endpoints:
+
+- `GET /boards` (`list_boards`) always returns `"labels": []`, regardless of
+  what's actually on the board — confirmed against a board with Deck's own
+  default labels, which still came back empty. `get_board()` (a single
+  board GET) returns the real list.
+- The nested card listing inside `GET /boards/{id}/stacks/{id}` (`list_cards`)
+  always returns `"labels": null` on every card, same issue. Only a single
+  card GET (`get_card()`) returns the real labels.
+- The write responses from `assignLabel`/`removeLabel` themselves are
+  **also** stale on this point — a real assignment can succeed while the
+  response body still shows the old label state. `cli.py` re-fetches the
+  card after any real label write before printing anything (`_emit_verified_card`),
+  specifically because of this.
+
+The pattern, if you're extending this: **anything involving a card's or
+board's labels must come from an individual GET, never from a list endpoint
+or a write response.** Every other field we've checked (ids, `stackId`,
+titles, order) has been reliable everywhere we looked — this is specific to
+labels, not a blanket "don't trust the API" rule. If you add a new feature
+that reads label state, dry-run it against a real card and check the
+printed output itself, not just the code — that's how each of these three
+were actually found.
+
+Also worth knowing: cards that are archived don't show up in `list_cards`
+at all, so a title-based lookup can report "not found" for a card that
+genuinely exists.
+
 ## Usage
 
 ```sh
@@ -43,6 +73,9 @@ python3 cli.py create-stack <board_id> "Now"
 python3 cli.py create-card <board_id> <stack_id> "Ship the thing" --description "..."
 python3 cli.py move-card <board_id> <stack_id> <card_id> <target_stack_id>
 python3 cli.py comment <card_id> "moved to done, PR merged"
+python3 cli.py create-label <board_id> "Urgent" FF0000
+python3 cli.py assign-label <board_id> <stack_id> <card_id> <label_id>
+python3 cli.py remove-label <board_id> <stack_id> <card_id> <label_id>
 ```
 
 Every mutating command takes `--dry-run`, which prints the exact API call it
@@ -118,13 +151,10 @@ not just a partial simulation against what currently exists.
 
 No unit tests against the HTTP client — mocking Nextcloud's responses to
 test glue code isn't worth much, and the real risk here is live mutation of
-board state, not client logic. (One of those live-only bugs did slip past
-review once already: `card.get("labels", [])` looked safe but Deck returns
-`"labels": null` rather than omitting the key, so `.get` with a default
-never kicked in — only caught by actually dry-running against a real card,
-not by reading the code.) The real logic — title lookups in `by_title.py`,
-and `apply-spec`'s resolver in `spec_resolve.py` — are pure functions with
-real test files:
+board state, not client logic (see "Known API quirks" above for what that
+risk actually looked like in practice). The real logic — title lookups in
+`by_title.py`, and `apply-spec`'s resolver in `spec_resolve.py` — are pure
+functions with real test files:
 
 ```sh
 python3 test_by_title.py
