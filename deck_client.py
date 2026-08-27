@@ -91,6 +91,15 @@ class DeckClient:
         stack = self._request("GET", f"/boards/{board_id}/stacks/{stack_id}")
         return stack.get("cards") or []
 
+    def get_card(self, board_id, stack_id, card_id):
+        # Same issue as get_board(): the stack-nested listing above returns
+        # "labels": null on every card regardless of what's actually
+        # assigned (confirmed live -- assignLabel succeeded, list_cards
+        # still showed null, only a single-card GET showed the real label).
+        # Anything that needs to know a card's current labels must fetch it
+        # individually.
+        return self._request("GET", f"/boards/{board_id}/stacks/{stack_id}/cards/{card_id}")
+
     # -- writes --
 
     def create_board(self, title, color="0082C9", dry_run=False):

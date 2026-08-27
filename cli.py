@@ -149,6 +149,12 @@ def _resolve_card_and_label(args, client, require_label=False):
     commands. Exits with a clear message on any not-found case. Returns
     (state, card, label) -- label is None if it doesn't exist yet and
     require_label is False (the caller is about to create it).
+
+    The card is re-fetched individually after the title lookup: cards from
+    _fetch_board_state come via list_cards, which -- like list_boards --
+    always returns "labels": null regardless of what's actually assigned
+    (confirmed live). Only a single-card GET returns real label data, and
+    the "already has this label" check needs that to not be silently wrong.
     """
     state = _fetch_board_state(client, args.board_title)
     if state["board"] is None:
@@ -159,6 +165,9 @@ def _resolve_card_and_label(args, client, require_label=False):
         scope = f" in stack {args.from_stack!r}" if args.from_stack else ""
         sys.exit(f"No card titled {args.card_title!r}{scope} on board {args.board_title!r} "
                   f"(note: archived cards aren't visible to this lookup)")
+    stack_title = card.get("stackTitle")
+    card = client.get_card(state["board"]["id"], card["stackId"], card["id"])
+    card["stackTitle"] = stack_title
 
     label = find_label(state["board"]["labels"], args.label_title)
     if label is None and require_label:
