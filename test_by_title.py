@@ -3,7 +3,7 @@
     python3 test_by_title.py
 """
 
-from by_title import find_board, find_card, find_stack
+from by_title import find_board, find_card, find_label, find_stack
 
 BOARDS = [{"id": 1, "title": "James"}, {"id": 2, "title": "Office"}]
 STACKS = [{"id": 10, "title": "Now"}, {"id": 11, "title": "Done"}]
@@ -11,6 +11,10 @@ CARDS = [
     {"id": 100, "title": "Ship the thing", "stackTitle": "Now"},
     {"id": 101, "title": "Fix the bug", "stackTitle": "Done"},
     {"id": 102, "title": "Fix the bug", "stackTitle": "Now"},  # re-raised after being closed
+]
+LABELS = [
+    {"id": 6135, "title": "Finished", "color": "31CC7C"},
+    {"id": 6136, "title": "To review", "color": "317CCC"},
 ]
 
 
@@ -52,6 +56,20 @@ def test_find_card_duplicate_title_disambiguated_by_stack():
 
 def test_find_card_missing_returns_none():
     assert find_card(CARDS, "Does not exist") is None
+
+
+def test_find_label_hit_and_miss():
+    assert find_label(LABELS, "Finished")["id"] == 6135
+    assert find_label(LABELS, "Nonexistent") is None
+
+
+def test_find_label_ambiguous_raises():
+    dup = LABELS + [{"id": 9999, "title": "Finished", "color": "000000"}]
+    try:
+        find_label(dup, "Finished")
+    except ValueError:
+        return
+    raise AssertionError("expected ValueError for two labels sharing a title")
 
 
 if __name__ == "__main__":
