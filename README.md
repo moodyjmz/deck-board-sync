@@ -50,6 +50,28 @@ would make (method, path, body) instead of sending it. There is deliberately
 no `delete` command — deletion is destructive and out of scope until this
 workflow has proven itself.
 
+### move-card-by-title / comment-by-title
+
+Once a board has real cards on it, finding the numeric ids for `move-card`
+gets old fast. These two look things up by title instead:
+
+```sh
+python3 cli.py move-card-by-title "James" "Fix the office app" "In Progress"
+python3 cli.py comment-by-title "James" "Fix the office app" "PR merged, verifying"
+```
+
+If the same card title exists in more than one stack (e.g. something
+re-raised after being closed), the lookup refuses to guess — pass
+`--from-stack "Backlog"` to say which one you mean. `--dry-run` prints the
+*resolved* move (real ids, current and target stack titles), not just a raw
+API call, since the whole point of this command is that you can't otherwise
+eyeball whether the ids it found are the right ones.
+
+Note: these lookups only see cards that show up in a plain stack listing,
+which does not include archived cards. If a title isn't found and you know
+the card exists, it's probably archived — use the numeric `move-card`/
+`comment` commands instead, or unarchive it first.
+
 ### apply-spec
 
 For seeding a board from a JSON spec (see `examples/board-spec.example.json`):
@@ -72,15 +94,17 @@ not just a partial simulation against what currently exists.
 
 No unit tests against the HTTP client — mocking Nextcloud's responses to
 test glue code isn't worth much, and the real risk here is live mutation of
-board state, not client logic. The one piece of real logic — `apply-spec`'s
-resolver, in `spec_resolve.py` — is a pure function and has a real test
-file:
+board state, not client logic. The real logic — title lookups in
+`by_title.py`, and `apply-spec`'s resolver in `spec_resolve.py` — are pure
+functions with real test files:
 
 ```sh
+python3 test_by_title.py
 python3 test_resolve.py
 ```
 
-No CI; run it manually before trusting `apply-spec` against a real board.
+No CI; run these manually before trusting `apply-spec` or `move-card-by-title`
+against a real board.
 
 ## License
 

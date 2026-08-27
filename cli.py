@@ -21,6 +21,7 @@ import sys
 
 from deck_client import DeckClient, DeckAPIError
 from spec_resolve import resolve
+from by_title import find_board, find_card, find_stack
 
 
 def get_client(args):
@@ -68,9 +69,16 @@ def cmd_comment(args, client):
     emit(client.add_comment(args.card_id, args.message, dry_run=args.dry_run))
 
 
-def _current_state(client, spec):
-    boards = client.list_boards()
-    board = next((b for b in boards if b["title"] == spec["board"]["title"]), None)
+def _fetch_board_state(client, board_title):
+    """Boards/stacks/cards for one board, by title. cards each carry a
+    "stackTitle" key attached here, since list_cards doesn't include it.
+    board is None if no board has this title -- callers decide what that
+    means (apply-spec: needs creating; the *-by-title commands: fatal).
+    Note: archived cards are not included -- list_cards only returns what
+    a plain stack GET returns, which excludes them (confirmed against a
+    live board, not assumed).
+    """
+    board = find_board(client.list_boards(), board_title)
     if board is None:
         return {"board": None, "stacks": [], "cards": []}
 
@@ -84,11 +92,50 @@ def _current_state(client, spec):
     return {"board": board, "stacks": stacks, "cards": cards}
 
 
+def cmd_move_card_by_title(args, client):
+    state = _fetch_board_state(client, args.board_title)
+    if state["board"] is None:
+        sys.exit(f"No board titled {args.board_title!r}")
+    card = find_card(state["cards"], args.card_title, from_stack=args.from_stack)
+    if card is None:
+        scope = f" in stack {args.from_stack!r}" if args.from_stack else ""
+        sys.exit(f"No card titled {args.card_title!r}{scope} on board {args.board_title!r} "
+                  f"(note: archived cards aren't visible to this lookup)")
+    stack = find_stack(state["stacks"], args.target_stack_title)
+    if stack is None:
+        sys.exit(f"No stack titled {args.target_stack_title!r} on board {args.board_title!r}")
+
+    if args.dry_run:
+        print(f"would move card {card['id']} {card['title']!r} "
+              f"from stack {card['stackId']} {card.get('stackTitle')!r} "
+              f"to stack {stack['id']} {stack['title']!r} (board {state['board']['id']})")
+        return
+
+    emit(client.move_card(state["board"]["id"], card["stackId"], card["id"], stack["id"], order=args.order))
+
+
+def cmd_comment_by_title(args, client):
+    state = _fetch_board_state(client, args.board_title)
+    if state["board"] is None:
+        sys.exit(f"No board titled {args.board_title!r}")
+    card = find_card(state["cards"], args.card_title, from_stack=args.from_stack)
+    if card is None:
+        scope = f" in stack {args.from_stack!r}" if args.from_stack else ""
+        sys.exit(f"No card titled {args.card_title!r}{scope} on board {args.board_title!r} "
+                  f"(note: archived cards aren't visible to this lookup)")
+
+    if args.dry_run:
+        print(f"would comment on card {card['id']} {card['title']!r}: {args.message!r}")
+        return
+
+    emit(client.add_comment(card["id"], args.message))
+
+
 def cmd_apply_spec(args, client):
     with open(args.spec_file) as f:
         spec = json.load(f)
 
-    state = _current_state(client, spec)
+    state = _fetch_board_state(client, spec["board"]["title"])
     ops = resolve(state, spec)
 
     if args.dry_run:
@@ -170,6 +217,23 @@ def build_parser():
     sp.add_argument("--dry-run", action="store_true")
     sp.set_defaults(func=cmd_comment)
 
+    sp = sub.add_parser("move-card-by-title", help="move a card by looking up board/card/target-stack titles instead of numeric ids")
+    sp.add_argument("board_title")
+    sp.add_argument("card_title")
+    sp.add_argument("target_stack_title")
+    sp.add_argument("--from-stack", help="disambiguate when the same card title exists in more than one stack")
+    sp.add_argument("--order", type=int, default=999)
+    sp.add_argument("--dry-run", action="store_true")
+    sp.set_defaults(func=cmd_move_card_by_title)
+
+    sp = sub.add_parser("comment-by-title", help="comment on a card by looking up board/card titles instead of numeric ids")
+    sp.add_argument("board_title")
+    sp.add_argument("card_title")
+    sp.add_argument("message")
+    sp.add_argument("--from-stack", help="disambiguate when the same card title exists in more than one stack")
+    sp.add_argument("--dry-run", action="store_true")
+    sp.set_defaults(func=cmd_comment_by_title)
+
     sp = sub.add_parser("apply-spec", help="create whatever a board-spec JSON file describes that doesn't already exist")
     sp.add_argument("spec_file")
     sp.add_argument("--dry-run", action="store_true")
@@ -185,6 +249,8 @@ def main():
         args.func(args, client)
     except DeckAPIError as e:
         sys.exit(f"Deck API error {e.status}: {e.body}")
+    except ValueError as e:
+        sys.exit(str(e))
 
 
 if __name__ == "__main__":
