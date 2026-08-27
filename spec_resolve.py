@@ -23,7 +23,14 @@ Returns a list of operation dicts. Real objects carry a real numeric "id";
 not-yet-created ones carry a "new:<n>" placeholder id that a later operation
 in the same list may reference. "skip_card_wrong_stack" entries are not
 executable -- apply() should just warn on them.
+
+Stack and card lookups go through by_title.find_stack/find_card rather than
+a plain {title: item} dict, so a duplicate title on the board raises instead
+of silently resolving to whichever one a dict comprehension happened to keep
+last.
 """
+
+from by_title import find_card, find_stack
 
 
 def resolve(current_state, spec):
@@ -47,22 +54,20 @@ def resolve(current_state, spec):
     else:
         board_id = board["id"]
 
-    existing_stacks = {s["title"]: s["id"] for s in current_state.get("stacks", [])}
     stack_id_by_title = {}
     for title in spec.get("stacks", []):
-        if title in existing_stacks:
-            stack_id_by_title[title] = existing_stacks[title]
+        existing = find_stack(current_state.get("stacks", []), title)
+        if existing is not None:
+            stack_id_by_title[title] = existing["id"]
         else:
             stack_id = new_id()
             ops.append({"op": "create_stack", "id": stack_id, "board_id": board_id, "title": title})
             stack_id_by_title[title] = stack_id
 
-    existing_cards_by_title = {c["title"]: c for c in current_state.get("cards", [])}
-
     for card in spec.get("cards", []):
         title = card["title"]
         target_stack = card["stack"]
-        existing = existing_cards_by_title.get(title)
+        existing = find_card(current_state.get("cards", []), title)
         if existing is not None:
             if existing.get("stackTitle") != target_stack:
                 ops.append({
