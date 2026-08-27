@@ -116,8 +116,17 @@ class DeckClient:
             body["duedate"] = duedate
         return self._request("POST", f"/boards/{board_id}/stacks/{stack_id}/cards", body, dry_run=dry_run)
 
-    def move_card(self, board_id, stack_id, card_id, target_stack_id, order=999, dry_run=False):
-        path = f"/boards/{board_id}/stacks/{stack_id}/cards/{card_id}/reorder"
+    def move_card(self, board_id, target_stack_id, card_id, order=999, dry_run=False):
+        # The {stackId} URL segment must be the DESTINATION stack, not the
+        # card's current one -- confirmed against Deck's own source
+        # (CardApiController::reorder / CardService::reorder). The
+        # controller method's $stackId argument is bound by name, and the
+        # route also defines a {stackId} path segment with the same name;
+        # the route value wins the collision, so a body "stackId" pointing
+        # anywhere else is silently discarded. Verified live: calling this
+        # with the source stack in the path re-orders within that stack and
+        # never actually moves the card, with no error of any kind.
+        path = f"/boards/{board_id}/stacks/{target_stack_id}/cards/{card_id}/reorder"
         return self._request("PUT", path, {"stackId": target_stack_id, "order": order}, dry_run=dry_run)
 
     def add_comment(self, card_id, message, dry_run=False):
