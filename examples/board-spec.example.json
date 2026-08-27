@@ -1,0 +1,19 @@
+{
+  "board": {
+    "title": "Team Workload",
+    "color": "0082C9"
+  },
+  "stacks": ["Now", "Waiting on others", "Blocked", "Done"],
+  "cards": [
+    {
+      "title": "Example task one",
+      "stack": "Now",
+      "description": "https://github.com/example-org/example-repo/pull/1"
+    },
+    {
+      "title": "Example task two",
+      "stack": "Waiting on others",
+      "description": "https://github.com/example-org/example-repo/issues/2"
+    }
+  ]
+}
