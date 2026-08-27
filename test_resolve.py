@@ -64,6 +64,38 @@ def test_card_in_wrong_stack_is_skipped_not_moved():
     assert skips[0]["target_stack"] == "Now"
 
 
+def test_duplicate_existing_card_title_raises_instead_of_picking_one():
+    # Two existing cards share a title (e.g. re-raised after being closed).
+    # Silently matching one -- as the old {title: card} dict did -- risks
+    # duplicating or skipping the wrong one; this must refuse instead.
+    state = {
+        "board": {"id": 1, "title": "Team Workload"},
+        "stacks": [{"id": 10, "title": "Now"}, {"id": 11, "title": "Waiting"}, {"id": 12, "title": "Done"}],
+        "cards": [
+            {"id": 100, "title": "Ship the thing", "stackTitle": "Now"},
+            {"id": 101, "title": "Ship the thing", "stackTitle": "Done"},
+        ],
+    }
+    try:
+        resolve(state, SPEC)
+    except ValueError:
+        return
+    raise AssertionError("expected ValueError when a spec card's title matches two existing cards")
+
+
+def test_duplicate_existing_stack_title_raises():
+    bad_state = {
+        "board": {"id": 1, "title": "Team Workload"},
+        "stacks": [{"id": 10, "title": "Now"}, {"id": 13, "title": "Now"}, {"id": 11, "title": "Waiting"}, {"id": 12, "title": "Done"}],
+        "cards": [],
+    }
+    try:
+        resolve(bad_state, SPEC)
+    except ValueError:
+        return
+    raise AssertionError("expected ValueError when the board already has two stacks sharing a title in spec['stacks']")
+
+
 def test_unknown_target_stack_raises():
     bad_spec = {
         "board": {"title": "X"},
