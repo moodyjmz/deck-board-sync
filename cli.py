@@ -176,6 +176,16 @@ def _resolve_card_and_label(args, client, require_label=False):
     return state, card, label
 
 
+def _emit_verified_card(client, board_id, stack_id, card_id):
+    """Print the card's real current state via a fresh GET, not whatever
+    assign_label/remove_label returned -- those write responses carry
+    stale label data (confirmed live: a real assignment succeeded but the
+    write response still showed an empty labels array), same issue as
+    list_cards/list_boards.
+    """
+    emit(client.get_card(board_id, stack_id, card_id))
+
+
 def cmd_label_card_by_title(args, client):
     state, card, label = _resolve_card_and_label(args, client, require_label=False)
     existing_ids = {l["id"] for l in (card.get("labels") or [])}
@@ -192,7 +202,8 @@ def cmd_label_card_by_title(args, client):
             print(f"would assign existing label {label['id']} {label['title']!r} ({label['color']}) "
                   f"to card {card['id']} {card['title']!r}")
             return
-        emit(client.assign_label(state["board"]["id"], card["stackId"], card["id"], label["id"]))
+        client.assign_label(state["board"]["id"], card["stackId"], card["id"], label["id"])
+        _emit_verified_card(client, state["board"]["id"], card["stackId"], card["id"])
         return
 
     if not args.color:
@@ -205,7 +216,8 @@ def cmd_label_card_by_title(args, client):
         return
 
     new_label = client.create_label(state["board"]["id"], args.label_title, args.color)
-    emit(client.assign_label(state["board"]["id"], card["stackId"], card["id"], new_label["id"]))
+    client.assign_label(state["board"]["id"], card["stackId"], card["id"], new_label["id"])
+    _emit_verified_card(client, state["board"]["id"], card["stackId"], card["id"])
 
 
 def cmd_unlabel_card_by_title(args, client):
@@ -220,7 +232,8 @@ def cmd_unlabel_card_by_title(args, client):
         print(f"would remove label {label['id']} {label['title']!r} from card {card['id']} {card['title']!r}")
         return
 
-    emit(client.remove_label(state["board"]["id"], card["stackId"], card["id"], label["id"]))
+    client.remove_label(state["board"]["id"], card["stackId"], card["id"], label["id"])
+    _emit_verified_card(client, state["board"]["id"], card["stackId"], card["id"])
 
 
 def cmd_apply_spec(args, client):
