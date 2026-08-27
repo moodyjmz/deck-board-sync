@@ -72,6 +72,30 @@ which does not include archived cards. If a title isn't found and you know
 the card exists, it's probably archived — use the numeric `move-card`/
 `comment` commands instead, or unarchive it first.
 
+### Colouring cards (labels)
+
+Deck cards don't have a color field of their own — color lives on a
+**label** (title + hex color), which you attach to a card. A card can carry
+several labels at once.
+
+```sh
+python3 cli.py label-card-by-title "James" "Fix the office app" "Urgent" --color FF0000
+python3 cli.py label-card-by-title "James" "Some other card" "Urgent"          # label already exists, no --color needed
+python3 cli.py unlabel-card-by-title "James" "Fix the office app" "Urgent"
+```
+
+`label-card-by-title` creates the label first if it doesn't exist yet
+(`--color` required in that case), then assigns it — matching `apply-spec`'s
+create-if-missing idempotency. If the label already exists and you pass a
+different `--color`, it's **not** changed — labels are board-scoped, so
+recoloring one would recolor every card already carrying it; you get a
+warning instead, on stderr. Assigning a label the card already has, or
+removing one it doesn't have, is a no-op with a message, not an error.
+
+There's no `delete-label` — same reasoning as no `delete-card`, but sharper
+here: get the label title right the first time, since a stray label sits on
+the board with no way to remove it through this CLI.
+
 ### apply-spec
 
 For seeding a board from a JSON spec (see `examples/board-spec.example.json`):
@@ -94,9 +118,13 @@ not just a partial simulation against what currently exists.
 
 No unit tests against the HTTP client — mocking Nextcloud's responses to
 test glue code isn't worth much, and the real risk here is live mutation of
-board state, not client logic. The real logic — title lookups in
-`by_title.py`, and `apply-spec`'s resolver in `spec_resolve.py` — are pure
-functions with real test files:
+board state, not client logic. (One of those live-only bugs did slip past
+review once already: `card.get("labels", [])` looked safe but Deck returns
+`"labels": null` rather than omitting the key, so `.get` with a default
+never kicked in — only caught by actually dry-running against a real card,
+not by reading the code.) The real logic — title lookups in `by_title.py`,
+and `apply-spec`'s resolver in `spec_resolve.py` — are pure functions with
+real test files:
 
 ```sh
 python3 test_by_title.py

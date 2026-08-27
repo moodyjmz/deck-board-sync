@@ -21,7 +21,7 @@ import sys
 
 from deck_client import DeckClient, DeckAPIError
 from spec_resolve import resolve
-from by_title import find_board, find_card, find_stack
+from by_title import find_board, find_card, find_label, find_stack
 
 
 def get_client(args):
@@ -81,6 +81,7 @@ def _fetch_board_state(client, board_title):
     board = find_board(client.list_boards(), board_title)
     if board is None:
         return {"board": None, "stacks": [], "cards": []}
+    board = client.get_board(board["id"])  # list_boards() doesn't populate labels; a single GET does
 
     stacks = client.list_stacks(board["id"])
     cards = []
@@ -129,6 +130,88 @@ def cmd_comment_by_title(args, client):
         return
 
     emit(client.add_comment(card["id"], args.message))
+
+
+def cmd_create_label(args, client):
+    emit(client.create_label(args.board_id, args.title, args.color, dry_run=args.dry_run))
+
+
+def cmd_assign_label(args, client):
+    emit(client.assign_label(args.board_id, args.stack_id, args.card_id, args.label_id, dry_run=args.dry_run))
+
+
+def cmd_remove_label(args, client):
+    emit(client.remove_label(args.board_id, args.stack_id, args.card_id, args.label_id, dry_run=args.dry_run))
+
+
+def _resolve_card_and_label(args, client, require_label=False):
+    """Shared lookup for the label-card-by-title / unlabel-card-by-title
+    commands. Exits with a clear message on any not-found case. Returns
+    (state, card, label) -- label is None if it doesn't exist yet and
+    require_label is False (the caller is about to create it).
+    """
+    state = _fetch_board_state(client, args.board_title)
+    if state["board"] is None:
+        sys.exit(f"No board titled {args.board_title!r}")
+
+    card = find_card(state["cards"], args.card_title, from_stack=args.from_stack)
+    if card is None:
+        scope = f" in stack {args.from_stack!r}" if args.from_stack else ""
+        sys.exit(f"No card titled {args.card_title!r}{scope} on board {args.board_title!r} "
+                  f"(note: archived cards aren't visible to this lookup)")
+
+    label = find_label(state["board"]["labels"], args.label_title)
+    if label is None and require_label:
+        sys.exit(f"No label titled {args.label_title!r} on board {args.board_title!r}")
+
+    return state, card, label
+
+
+def cmd_label_card_by_title(args, client):
+    state, card, label = _resolve_card_and_label(args, client, require_label=False)
+    existing_ids = {l["id"] for l in (card.get("labels") or [])}
+
+    if label is not None:
+        if args.color and label["color"].lower() != args.color.lower():
+            print(f"WARNING: label {args.label_title!r} already exists with color {label['color']!r} -- "
+                  f"not changing it to {args.color!r}, that would recolor every card carrying it. "
+                  f"Remove --color, or use a different label title.", file=sys.stderr)
+        if label["id"] in existing_ids:
+            print(f"Card {card['title']!r} already has label {args.label_title!r} -- nothing to do.")
+            return
+        if args.dry_run:
+            print(f"would assign existing label {label['id']} {label['title']!r} ({label['color']}) "
+                  f"to card {card['id']} {card['title']!r}")
+            return
+        emit(client.assign_label(state["board"]["id"], card["stackId"], card["id"], label["id"]))
+        return
+
+    if not args.color:
+        sys.exit(f"Label {args.label_title!r} doesn't exist on board {args.board_title!r} yet -- "
+                  f"pass --color to create it (hex, e.g. FF0000)")
+
+    if args.dry_run:
+        print(f"would create label {args.label_title!r} (color {args.color}) on board {state['board']['id']}, "
+              f"then assign to card {card['id']} {card['title']!r}")
+        return
+
+    new_label = client.create_label(state["board"]["id"], args.label_title, args.color)
+    emit(client.assign_label(state["board"]["id"], card["stackId"], card["id"], new_label["id"]))
+
+
+def cmd_unlabel_card_by_title(args, client):
+    state, card, label = _resolve_card_and_label(args, client, require_label=True)
+    existing_ids = {l["id"] for l in (card.get("labels") or [])}
+
+    if label["id"] not in existing_ids:
+        print(f"Card {card['title']!r} doesn't have label {args.label_title!r} -- nothing to do.")
+        return
+
+    if args.dry_run:
+        print(f"would remove label {label['id']} {label['title']!r} from card {card['id']} {card['title']!r}")
+        return
+
+    emit(client.remove_label(state["board"]["id"], card["stackId"], card["id"], label["id"]))
 
 
 def cmd_apply_spec(args, client):
@@ -233,6 +316,46 @@ def build_parser():
     sp.add_argument("--from-stack", help="disambiguate when the same card title exists in more than one stack")
     sp.add_argument("--dry-run", action="store_true")
     sp.set_defaults(func=cmd_comment_by_title)
+
+    sp = sub.add_parser("create-label")
+    sp.add_argument("board_id", type=int)
+    sp.add_argument("title")
+    sp.add_argument("color", help="hex, e.g. FF0000")
+    sp.add_argument("--dry-run", action="store_true")
+    sp.set_defaults(func=cmd_create_label)
+
+    sp = sub.add_parser("assign-label")
+    sp.add_argument("board_id", type=int)
+    sp.add_argument("stack_id", type=int)
+    sp.add_argument("card_id", type=int)
+    sp.add_argument("label_id", type=int)
+    sp.add_argument("--dry-run", action="store_true")
+    sp.set_defaults(func=cmd_assign_label)
+
+    sp = sub.add_parser("remove-label")
+    sp.add_argument("board_id", type=int)
+    sp.add_argument("stack_id", type=int)
+    sp.add_argument("card_id", type=int)
+    sp.add_argument("label_id", type=int)
+    sp.add_argument("--dry-run", action="store_true")
+    sp.set_defaults(func=cmd_remove_label)
+
+    sp = sub.add_parser("label-card-by-title", help="assign a label to a card by title, creating the label first if needed")
+    sp.add_argument("board_title")
+    sp.add_argument("card_title")
+    sp.add_argument("label_title")
+    sp.add_argument("--color", help="hex, e.g. FF0000 -- required if the label doesn't exist yet")
+    sp.add_argument("--from-stack", help="disambiguate when the same card title exists in more than one stack")
+    sp.add_argument("--dry-run", action="store_true")
+    sp.set_defaults(func=cmd_label_card_by_title)
+
+    sp = sub.add_parser("unlabel-card-by-title", help="remove a label from a card by title")
+    sp.add_argument("board_title")
+    sp.add_argument("card_title")
+    sp.add_argument("label_title")
+    sp.add_argument("--from-stack", help="disambiguate when the same card title exists in more than one stack")
+    sp.add_argument("--dry-run", action="store_true")
+    sp.set_defaults(func=cmd_unlabel_card_by_title)
 
     sp = sub.add_parser("apply-spec", help="create whatever a board-spec JSON file describes that doesn't already exist")
     sp.add_argument("spec_file")
